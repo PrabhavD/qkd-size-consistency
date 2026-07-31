@@ -1,30 +1,88 @@
 # QKD-Size-Consistency
 
-Project to determine if the Quantum Krylov Diagonalization algorithm (KQD) and its sample-based counterpart (SKQD) are size-consistent, and hence serve as helpful tools for simulating model chemistry on quantum computers.
+Project to determine if the Quantum Krylov Diagonalization algorithm (QKD) and its sample-based counterpart (QKD) are size-consistent, and hence serve as helpful tools for simulating model chemistry on quantum computers.
 
 ***
 
-## 🔬 Latest Work: H2 Exact-Evolution KQD & Size Consistency Analysis
+## Size Consistency — Correct Finite-\(N\) Definition
 
-> **This is the primary research contribution of this repository.** The notebooks below establish a clean, Trotter-error-free baseline for KQD on the hydrogen molecule and rigorously probe size consistency — a necessary condition for any method to be chemically meaningful.
-
-### What is Size Consistency?
-
-A method is **size-consistent** if the energy of two non-interacting fragments A and B computed jointly equals the sum of their energies computed separately:
+A method is **size-consistent** if the energy of two non-interacting fragments \(A\) and \(B\) computed jointly equals the sum of their energies computed separately:
 
 $$E(A \cdots B) = E(A) + E(B)$$
 
-This is a non-trivial requirement for variational quantum algorithms. KQD passes this test exactly for STO-3G and to within sub-chemical accuracy for 6-31G (see results below).
+The **correct finite-\(N\) test** compares the joint (or protocol) energy at large separation against **same-\(N\) QKD monomers**, not exact monomer energies:
+
+$$\Delta E_{\mathrm{SC}}(N)=\bigl|E_{\mathrm{method}}(A{\cdots}B;N)-E_A^{\mathrm{QKD}}(N)-E_B^{\mathrm{QKD}}(N)\bigr|
+\quad\text{at }R=1000\,\text{Å}.$$
+
+Comparing a converged dimer energy to **exact** monomers can look “size-consistent” by coincidence — that is a reference coincidence, not a finite-\(N\) SC proof. Key consequences established in this repo:
+
+- **Joint sequential Krylov** at fixed Krylov order \(N\) is generally **not** size-consistent.
+- **Factorized / Kronecker product bases** restore size consistency by construction in the \(R\to\infty\) limit.
+- Apparent SC “lift-off” at large \(N\) often tracks **SVD truncation of a singular overlap \(S\)**, not physical SC loss.
 
 ***
 
-### `krylov_h2_exact_sc.ipynb` — KQD on H₂ with Exact Evolution
+## Latest Work: Interacting Krylov Protocols
 
-This notebook benchmarks KQD on the hydrogen molecule using **exact matrix exponentiation** (`scipy.linalg.expm`), completely bypassing Trotterization. This isolates the KQD algorithm's intrinsic convergence from any Trotter-product error.
+> **Primary research contribution.** Fragment-structured Krylov bases for interacting \(\mathrm{H}_2{\cdots}\mathrm{H}_2\) (and \(\mathrm{H}_2{\cdots}\mathrm{H}_4\)), testing size consistency against interacting accuracy. Chemical accuracy threshold: \(1.6\,\mathrm{mHa}\).
 
-#### Hamiltonian Construction
+### Hamiltonian partition
 
-Hamiltonians are built via **Qiskit Nature + PySCF**, with a `ParityMapper` 2-qubit reduction exploiting Z₂ particle-number and spin-parity symmetries:
+$$H_{\mathrm{tot}}=H_a+H_b+H_{ab},\qquad
+H_A=H_a+\tfrac12 H_{ab},\qquad
+H_B=H_b+\tfrac12 H_{ab},\qquad
+\Delta t=\pi/\|H_{\mathrm{tot}}\|_2.$$
+
+### Protocol taxonomy
+
+| Name | Basis states | Raw dim | Notes |
+|---|---|---|---|
+| **P1 / joint** | \(U_{\mathrm{tot}}^k\|\mathrm{HF}\rangle\) | \(N\) | Supermolecular KQD |
+| **P2** | Same joint energy | \(N\) | \(\Delta\) vs exact monomers (not finite-\(N\) SC) |
+| **P3 / novel** | \(U_A^i U_B^j\|\mathrm{HF}\rangle\) | \(N^2\) | Dressed product; SC-friendly as \(H_{ab}\to0\) |
+| **both_order** | AB ∪ BA grids | \(\le 2N^2\) | Uses \([H_A,H_B]\neq0\) at close contact |
+| **multidt** | Union of AB grids at several \(\Delta t\) | \(\le 3N^2\) | Spectral sampling; same product grammar |
+| **hybrid** | novel ∪ short joint chain | \(\le N^2+N\) | Dressed core + entanglement patch |
+| **uab** | \(e^{-i(kH_A+lH_B)\Delta t}\|\mathrm{HF}\rangle\) | \(N^2\) | Dressed sum; independent \((k,l)\) |
+| **cross_product** | Same form with \(H=H_A\otimes I+I\otimes H_B\) | \(N^2\) | Ideal non-interacting / Kronecker limit |
+
+### Notebooks
+
+| Notebook | Role |
+|---|---|
+| [`krylov_interacting_protocols_sto3g_631g.ipynb`](krylov_interacting_protocols_sto3g_631g.ipynb) | Central: P1–P3, both_order, hybrid, multidt; STO-3G + 6-31G |
+| [`krylov_interacting_protocols_sto3g.ipynb`](krylov_interacting_protocols_sto3g.ipynb) | STO-3G-only precursor |
+| [`krylov_dressed_sum_uab_protocols.ipynb`](krylov_dressed_sum_uab_protocols.ipynb) | Dressed-sum \(U_{AB}\) |
+| [`krylov_cross_product_protocols.ipynb`](krylov_cross_product_protocols.ipynb) | Kronecker \(R\to\infty\) SC |
+| [`uab_sc_check.ipynb`](uab_sc_check.ipynb) | Minimal OpenFermion sanity check |
+
+### Headline results
+
+| Setting | Method | Result |
+|---|---|---|
+| STO-3G, \(R=1.1\) Å, \(N=6\) | novel P3 | GS / interaction error \(\sim 9\times10^{-7}\) Ha |
+| STO-3G, \(R=1000\) Å | novel P3 | SC \(\sim10^{-14}\) Ha |
+| 6-31G, \(R=1.1\) Å, \(N=8\) | novel P3 | Plateaus at **\(\sim5.6\,\mathrm{mHa}\)** (eff_dim \(\ll N^2\)) |
+| 6-31G, \(R=1.1\) Å, \(N=6\) | both_order / hybrid | **\(\sim1.30\) / \(\sim1.22\,\mathrm{mHa}\)** (chemical accuracy) |
+| 6-31G, \(R=1.1\) Å, \(N=6\) | multidt | \(\sim5.45\,\mathrm{mHa}\) — does not fix the grammar bottleneck |
+| 6-31G H₂+H₂, \(N=6\) | uab dressed-sum | **\(0.85\,\mathrm{mHa}\)**; strongly SC-friendly |
+| Kronecker \(R\to\infty\) | cross_product | Machine-precision SC when monomers are converged |
+| Kronecker \(R\to\infty\) | joint | Clear finite-\(N\) SC bumps (e.g. STO-3G \(\sim5\times10^{-4}\) Ha at \(N=2\)) |
+
+**Paper-level conclusion.** STO-3G novel succeeds by finite-space overcompleteness. On 6-31G, fixed-\(N\) dressed product is an \(O(N)\), commutator-biased subspace missing inter-fragment entanglement. Hybrid / both_order / uab are the pragmatic fixes for interacting accuracy while preserving SC-friendly structure; Kronecker cross-product proves SC by construction in the non-interacting limit.
+
+Figures and sweep CSVs live under `output/krylov_interacting_protocols_multibasis/`, `output/krylov_dressed_sum_uab/`, and related folders.
+
+***
+
+## Non-Interacting Baseline: H₂ Exact-Evolution KQD
+
+[`krylov_h2_exact_sc.ipynb`](krylov_h2_exact_sc.ipynb) benchmarks KQD on H₂ with **exact matrix exponentiation** (`scipy.linalg.expm`), isolating algorithmic convergence from Trotter error. Extended analysis is in [`krylov_h2_exact_sc_copy_4.ipynb`](krylov_h2_exact_sc_copy_4.ipynb) (Steps 14–18).
+
+### Hamiltonian construction
+
+Hamiltonians via **Qiskit Nature + PySCF**, `ParityMapper` 2-qubit reduction:
 
 | Property | STO-3G | 6-31G |
 |---|---|---|
@@ -33,102 +91,115 @@ Hamiltonians are built via **Qiskit Nature + PySCF**, with a `ParityMapper` 2-qu
 | Pauli terms | 5 | 159 |
 | Exact GS (total, Ha) | −1.13730604 | −1.15161432 |
 
-The **Hartree-Fock statevector** is used as the Krylov reference state — a product state requiring only X-gate preparation, consistent with the efficient Hadamard-test circuit model.
+Hartree–Fock statevector as Krylov reference. Algorithm:
 
-#### Algorithm
+$$|k\rangle = e^{-iHk \cdot dt}|\mathrm{ref}\rangle, \quad S_{ij} = \langle i | j \rangle, \quad \tilde{H}_{ij} = \langle i | H | j \rangle$$
 
-$$|k\rangle = e^{-iHk \cdot dt}|\text{ref}\rangle, \quad S_{ij} = \langle i | j \rangle, \quad \tilde{H}_{ij} = \langle i | H | j \rangle$$
+GEVP \(\tilde{H}\mathbf{c} = E\,\tilde{S}\mathbf{c}\) with regularised SVD (threshold \(10^{-10}\)).
 
-The generalised eigenvalue problem $\tilde{H}\mathbf{c} = E\,\tilde{S}\mathbf{c}$ is solved with a regularised SVD-based solver (threshold $10^{-10}$).
-
-#### Performance Optimisations
-
-Three algorithmic bugs in the naive implementation were fixed, yielding a significant speedup for the 6-31G sweeps:
+### Performance optimisations
 
 | Bug | Problem | Fix |
 |---|---|---|
-| Redundant `expm` calls | O(d) full matrix exponentials per `run_kqd` call | Compute $U = e^{-iH \cdot dt}$ **once**, apply iteratively: $|k\rangle = U^k|\text{ref}\rangle$ |
-| Redundant state rebuilding | States recomputed from scratch for each Krylov dim in sweep | Build all states at `max_dim` once; extract by slicing |
-| Redundant matrix construction | S and H rebuilt per dim | Build full matrices once; extract submatrices by index |
+| Redundant `expm` calls | O(d) full matrix exponentials per `run_kqd` | Compute \(U = e^{-iH \cdot dt}\) once; \(|k\rangle = U^k|\mathrm{ref}\rangle\) |
+| Redundant state rebuilding | States recomputed per Krylov dim | Build at `max_dim` once; slice |
+| Redundant matrix construction | S and H rebuilt per dim | Build full matrices once; extract submatrices |
 
-**Net result:** `len(dt_scales) × 1` `expm` calls instead of `sum(dims) × len(dt_scales)`.
-
-#### Convergence Results
+### Convergence (non-interacting monomer)
 
 | | STO-3G | 6-31G |
 |---|---|---|
-| Exact GS (Ha) | −1.1373060358 | −1.1516143199 |
-| KQD GS (Ha) | −1.1373060358 | −1.1516143199 |
-| Absolute error (Ha) | 4.44 × 10⁻¹⁶ | 6.22 × 10⁻¹⁵ |
-| Krylov dim to converge | 2 | 7–10 (dt-dependent) |
-| Chemical accuracy (1.6 mHa)? | ✅ | ✅ |
-| Machine precision? | ✅ | ✅ |
+| Absolute error (Ha) | \(4.44\times10^{-16}\) | \(6.22\times10^{-15}\) |
+| Krylov dim to converge | 2 | 7–10 (`dt`-dependent) |
+| Chemical accuracy? | Yes | Yes |
 
-STO-3G saturates the full Hilbert space at Krylov dimension 2 (the space is only 4-dimensional). 6-31G requires up to dim 10 at suboptimal `dt`, but reliably hits machine precision at `dt_opt`.
+### Non-interacting dimer SC (converged)
 
-***
-
-### Size Consistency Analysis
-
-The **non-interacting dimer** Hamiltonian is constructed as the tensor-product:
-
-$$H_{AB} = H_A \otimes I_B + I_A \otimes H_B$$
-
-with reference state $|\text{ref}_{AB}\rangle = |\text{ref}_A\rangle \otimes |\text{ref}_B\rangle$. This is mathematically equivalent to running PySCF at $R = 1000$ Å (where all inter-molecular integrals vanish), but avoids re-mapping a 4-electron system through a different symmetry sector.
-
-The **size consistency error** is defined as:
-
-$$\Delta E_{\text{SC}} = |E_{\text{KQD}}(A \cdots B) - 2\, E_{\text{KQD}}(A)|$$
-
-#### Converged Size Consistency (Krylov dim = 10, `dt = dt_opt`)
+Tensor-product dimer \(H_{AB}=H_A\otimes I_B+I_A\otimes H_B\). At Krylov dim 10, `dt = dt_opt`:
 
 | | STO-3G | 6-31G |
 |---|---|---|
-| 2 × E_KQD(H₂) (Ha) | −2.27461207 | −2.30322864 |
-| E_KQD(H₂⋯H₂) (Ha) | −2.27461207 | −2.30322844 |
-| **SC error (Ha)** | **8.88 × 10⁻¹⁶** | **1.98 × 10⁻⁷** |
+| SC error (Ha) | \(8.88\times10^{-16}\) | \(1.98\times10^{-7}\) |
 
-STO-3G achieves **exact** size consistency (machine precision). 6-31G exhibits a residual error of ~0.2 µHa — four orders of magnitude below chemical accuracy — attributable to the larger Hilbert space and tighter regularisation demands.
+This is the **converged** non-interacting baseline. It does **not** imply joint KQD is size-consistent at arbitrary finite \(N\) (see protocols section and Steps 16–18 below).
 
-#### Size Consistency vs. `dt` Sweep
+### Extensions (`krylov_h2_exact_sc_copy_4.ipynb`)
 
-A sweep over `dt` scales from $10^{-2}$ to $3 \times dt_{\text{opt}}$ characterises the robustness of size consistency:
-
-- **`dt` too small** → consecutive Krylov vectors become nearly identical → S rank-deficient → SC breaks
-- **`dt` too large** → Krylov vectors wrap/randomise → S ill-conditioned or singular → SC breaks
-- **Sweet spot** → S well-conditioned → KQD converges and remains size-consistent
-
-The minimum eigenvalue of S is tracked as a conditioning proxy alongside the SC error and monomer KQD error, for both monomer and dimer, in both basis sets.
-
-#### Output Figures
-
-| File | Description |
+| Step | Finding |
 |---|---|
-| `kqd_h2_exact_convergence.png` | KQD error vs Krylov dim, 4 dt scales, both bases |
-| `kqd_sc_vs_dt.png` | SC error, monomer error & S conditioning vs dt (4×2 panel) |
-| `kqd_h2_sc_bar.png` | Converged energy bar chart: 2×E_mono vs E_dimer vs 2×E_exact |
-| `kqd_sc_overlay.png` | STO-3G vs 6-31G overlay (3 panels) |
-| `kqd_h2_size_consistency.png` | Full Krylov-dim × dt SC sweep (6 panels) |
+| **14** | Exact GS recovery requires \(K\ge M\) (# eigenstates with nonzero ref overlap). No \(t\) rescues \(K<M\). |
+| **15** | Two-level “bird” \(t\)-sweeps; dimer 2-level product activates 4 states ⇒ \(K=2\) floor \(\sim0.23\) Ha. |
+| **16** | SC vs Krylov dim; mismatched monomer/dimer dims can inflate SC error. |
+| **17** | Heterogeneous H₂+H₄ additivity via product Krylov. |
+| **18** | Shared sequential Krylov on \(N\) replicated monomers: \(\delta=E(AA)-2E(A)\) grows \(\sim N^{6}\) at fixed \(K\). |
 
 ***
 
-## Krylov Quantum Diagonalization (KQD) — Ground State Estimation via AerSimulator
+## Spectral Error Theory
 
-A quantum simulation of the KQD algorithm estimating the ground state energy of a Hamiltonian using a Hadamard-test-based circuit, implemented with [Qiskit](https://qiskit.org/) and executed locally on `AerSimulator`.
+Synthetic and continuum models that explain *why* KQD errors appear and how spectra are resolved.
+
+| Notebook | Focus |
+|---|---|
+| [`kqd_error_characterisation_fourier_box.ipynb`](kqd_error_characterisation_fourier_box.ipynb) | Linear DOS; reference-state and \(dt\) drivers |
+| [`kqd_error_energy_discretisation.ipynb`](kqd_error_energy_discretisation.ipynb) | Continuum binning; Fourier ↔ energy dictionary |
+| [`kqd_krylov_energy_discretisation_elimination.ipynb`](kqd_krylov_energy_discretisation_elimination.ipynb) | High→low residual elimination front at \(dt_{\mathrm{opt}}\) |
+| [`kqd_fourier_box_with_effdim.ipynb`](kqd_fourier_box_with_effdim.ipynb) | Effective-dimension threshold |
+| [`kqd_free_particle_1d_v7.ipynb`](kqd_free_particle_1d_v7.ipynb) | Free particle; grid vs Krylov ceilings; corrected \(d_{\mathrm{eff}}\) |
+
+**Main points:**
+
+- **Nyquist** \(dt_{\mathrm{opt}}=\pi/\|H\|_2\) (or \(\pi/E_{\max}\)) places the top phase node at \(z=-1\).
+- At that \(dt\), Krylov acts as a time-domain Prony / Vandermonde method: modes resolve **high energy → low energy**.
+- Error landscape is **asymmetric**: small-\(dt\) cliff (near-parallel vectors / rank-deficient \(S\)) steeper than large-\(dt\) wrap-around.
+- **Effective dimension** \(d_{\mathrm{eff}}=\exp(-\sum |c_k|^2\ln|c_k|^2)\) sets the Krylov budget; error floors until \(d\gtrsim d_{\mathrm{eff}}\) when the target is in the support of \(|\psi_0\rangle\).
+- **Free-particle caveat:** Krylov span = support of \(|\psi_0\rangle\); a packet away from \(k_{\min}\) cannot reach \(E_{\min}\).
+
+***
+
+## Ising Size Extensivity
+
+Critical TFIM (\(J=h=1\), PBC, Néel reference): is KQD **size-extensive** (\(E_0/N\to\mathrm{const}\))?
+
+| Notebook | Focus |
+|---|---|
+| [`kqd_ising_size_extensivity_extended.ipynb`](kqd_ising_size_extensivity_extended.ipynb) | \(N=2\ldots12\); CFT \(1/N^2\) fits vs ED |
+| [`kqd_ising_size_extensivity_multi_dt.ipynb`](kqd_ising_size_extensivity_multi_dt.ipynb) | \(dt\) scales at fixed Krylov dim |
+| [`kqd_ising_size_extensivity_multi_kd.ipynb`](kqd_ising_size_extensivity_multi_kd.ipynb) | Krylov-dim schedules vs \(N\) |
+
+Exact ED is extensive (\(E_0/N\to -4/\pi\approx -1.273\)). KQD at **fixed** Krylov dim is accurate for small \(N\), then absolute and fractional errors grow — **method extensivity fails** unless the Krylov budget scales with system size. Near \(dt_{\mathrm{opt}}\) is best; too-small \(dt\) worsens rank deficiency.
+
+***
+
+## Analytic Drafts and Tooling
+
+| Path | Contents |
+|---|---|
+| [`novel-qkd-analytics/qkd_interacting_analytic.tex`](novel-qkd-analytics/qkd_interacting_analytic.tex) | Subspace fidelity \(F_N\), commutator, residual diagnostics for the 6-31G plateau |
+| [`paper/qkd_interacting_analytic_proof.tex`](paper/qkd_interacting_analytic_proof.tex) | Pure analytic proof: novel spans \(\psi_0\) on STO-3G but not at fixed \(N\) on 6-31G |
+| [`scripts/step3f_analytic_diagnostics.py`](scripts/step3f_analytic_diagnostics.py) | Reproducible PySCF / Qiskit Nature diagnostics pipeline |
+
+Generated figures and CSVs are under `output/`.
+
+***
+
+## Krylov Quantum Diagonalization (KQD) — AerSimulator
+
+A quantum simulation of KQD estimating the ground-state energy via a Hadamard-test circuit, implemented with [Qiskit](https://qiskit.org/) and executed locally on `AerSimulator` ([`krylov_aer.ipynb`](krylov_aer.ipynb)).
 
 ### Overview
 
-This notebook implements KQD using time evolution to build a unitary Krylov subspace:
+Builds a unitary Krylov subspace
 
-$$K^U_r = \text{span}\{|\psi_0\rangle,\, U|\psi_0\rangle,\, U^2|\psi_0\rangle,\, \ldots,\, U^{r-1}|\psi_0\rangle\}$$
+$$K^U_r = \mathrm{span}\{|\psi_0\rangle,\, U|\psi_0\rangle,\, U^2|\psi_0\rangle,\, \ldots,\, U^{r-1}|\psi_0\rangle\}$$
 
-where $U = e^{-iH\,dt}$ is realised via a first-order Lie–Trotter product formula. The overlap matrix **S** and effective Hamiltonian matrix **H** are assembled from expectation values measured via ancilla-qubit Hadamard tests. The generalised eigenvalue problem $H\mathbf{c} = E\,S\mathbf{c}$ is then solved classically to extract the ground state energy estimate.
+where \(U = e^{-iH\,dt}\) is realised via a first-order Lie–Trotter product formula. Overlap **S** and effective Hamiltonian **H** are assembled from Hadamard-test expectation values; the GEVP \(H\mathbf{c} = E\,S\mathbf{c}\) is solved classically.
 
-### What Changed from the IBM Learning Course Notebook
+### What changed from the IBM Learning Course notebook
 
-The original notebook ([IBM Quantum Learning — KQD](https://quantum.cloud.ibm.com/learning/en/courses/quantum-diagonalization-algorithms/krylov)) targets real IBM Quantum hardware via `QiskitRuntimeService`. This version replaces all QPU-specific infrastructure with a fully local `AerSimulator` execution path, preserving the KQD algorithm logic exactly.
+The original ([IBM Quantum Learning — KQD](https://quantum.cloud.ibm.com/learning/en/courses/quantum-diagonalization-algorithms/krylov)) targets real IBM hardware. This version replaces QPU infrastructure with local `AerSimulator`, preserving the algorithm logic.
 
-| Component | Original (QPU) | This Version (AerSimulator) |
+| Component | Original (QPU) | This version (AerSimulator) |
 |---|---|---|
 | Backend | `service.least_busy()` / `ibm_fez` | `AerSimulator.from_backend(FakeAuckland())` |
 | Execution primitive | `Batch` + `EstimatorV2` | `EstimatorV2(mode=backend)` |
@@ -136,14 +207,7 @@ The original notebook ([IBM Quantum Learning — KQD](https://quantum.cloud.ibm.
 | Credentials required | Yes | No |
 | Estimated runtime | ~17 minutes QPU time | Seconds (local) |
 
-### Algorithm Steps (Qiskit Patterns)
-
-1. **Map** — Define the target Hamiltonian as a `SparsePauliOp` and construct the parameterised Hadamard-test circuit with `PauliEvolutionGate` + `LieTrotter`
-2. **Optimize** — Transpile to the `FakeAuckland` basis gate set using `generate_preset_pass_manager` at `optimization_level=3`
-3. **Execute** — Run all parameter sweeps in a single PUB using `EstimatorV2` on `AerSimulator`
-4. **Post-process** — Assemble **S** and **H** matrices from `results.data.evs`, solve the regularised generalised eigenvalue problem, and plot convergence
-
-### Key Parameters
+### Key parameters
 
 | Parameter | Value |
 |---|---|
@@ -153,8 +217,6 @@ The original notebook ([IBM Quantum Learning — KQD](https://quantum.cloud.ibm.
 | Transpile optimisation level | 3 |
 | Noise model | `FakeAuckland` device noise |
 
-### Dependencies
-
 ```bash
 pip install qiskit qiskit-aer qiskit-ibm-runtime
 ```
@@ -163,17 +225,11 @@ pip install qiskit qiskit-aer qiskit-ibm-runtime
 
 ## Sample-based Krylov Quantum Diagonalization (SKQD)
 
-A quantum simulation of the SKQD algorithm for estimating the ground state energy of a spin-chain Hamiltonian, implemented using [Qiskit](https://qiskit.org/).
-
-### Overview
-
-This project implements SKQD on a 22-site antiferromagnetic XXZ spin-1/2 chain with periodic boundary conditions:
+SKQD on a 22-site antiferromagnetic XXZ spin-1/2 chain with periodic boundary conditions ([`skqd.ipynb`](skqd.ipynb)):
 
 $$H = \sum_{i,j} J_{xy}(X_i X_j + Y_i Y_j) + Z_i Z_j$$
 
-The algorithm builds a quantum Krylov subspace by repeatedly applying a Trotterized time-evolution operator to a Néel reference state, samples bitstrings from each Krylov vector, and classically diagonalises the projected Hamiltonian to estimate the ground state energy.
-
-### Key Parameters
+The algorithm builds a Krylov subspace by Trotterized evolution of a Néel reference, samples bitstrings from each Krylov vector, and classically diagonalises the projected Hamiltonian.
 
 | Parameter | Value |
 |---|---|
@@ -183,15 +239,11 @@ The algorithm builds a quantum Krylov subspace by repeatedly applying a Trotteri
 | Trotter steps | 6 |
 | Shots | 100,000 |
 
-### Dependencies
-
 ```bash
 pip install qiskit qiskit-aer qiskit-ibm-runtime qiskit-addon-sqd qiskit-addon-utils
 ```
 
-### Results
-
-The estimated ground state energy converges toward the exact value (−23.934) with increasing Krylov dimension, demonstrating the provable convergence guarantees of SKQD.
+The estimated ground-state energy converges toward the exact value (−23.934) with increasing Krylov dimension.
 
 ***
 
